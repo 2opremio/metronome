@@ -2,18 +2,22 @@ package output
 
 import (
 	"errors"
+	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/gordonklaus/portaudio"
 )
 
 const sampleRate uint = 44100
-const numSamples uint = 1000
+const numSamples uint = 2000
 
 // AudioOutput is a output stream to audio
 type AudioOutput struct {
 	*portaudio.Stream
 	strong, weak           chan struct{}
 	strongSound, weakSound []float64
+	outputDeviceName       string
 }
 
 // NewAudioOutput returns a new AudioOutput instance with default values
@@ -27,13 +31,30 @@ func NewAudioOutput(strongFreq, weakFreq float64) *AudioOutput {
 	}
 }
 
+// NewAudioOutputWithDevice returns a new AudioOutput instance and selects the output device by name or index.
+func NewAudioOutputWithDevice(strongFreq, weakFreq float64, outputDeviceName string) *AudioOutput {
+	o := NewAudioOutput(strongFreq, weakFreq)
+	o.outputDeviceName = outputDeviceName
+	return o
+}
+
 // Start starts the output channel
 func (o *AudioOutput) Start() (err error) {
 	if err = portaudio.Initialize(); err != nil {
 		return
 	}
 
-	o.Stream, err = portaudio.OpenDefaultStream(0, 1, float64(sampleRate), 0, o.processAudio)
+	outDevice, err := resolveOutputDevice(o.outputDeviceName)
+	if err != nil {
+		return err
+	}
+
+	params := portaudio.HighLatencyParameters(nil, outDevice)
+	params.Output.Channels = 1
+	params.SampleRate = float64(sampleRate)
+	params.FramesPerBuffer = 0
+
+	o.Stream, err = portaudio.OpenStream(params, o.processAudio)
 	if err != nil {
 		return
 	}
@@ -89,4 +110,36 @@ func (o *AudioOutput) PlayWeak() {
 	}
 
 	o.weak <- struct{}{}
+}
+
+func resolveOutputDevice(nameOrIndex string) (*portaudio.DeviceInfo, error) {
+	if strings.TrimSpace(nameOrIndex) == "" {
+		return portaudio.DefaultOutputDevice()
+	}
+
+	devices, err := portaudio.Devices()
+	if err != nil {
+		return nil, err
+	}
+
+	if idx, err := strconv.Atoi(nameOrIndex); err == nil {
+		if idx < 0 || idx >= len(devices) {
+			return nil, fmt.Errorf("output device index %d out of range", idx)
+		}
+		if devices[idx].MaxOutputChannels == 0 {
+			return nil, fmt.Errorf("device %d has no output channels", idx)
+		}
+		return devices[idx], nil
+	}
+
+	lower := strings.ToLower(nameOrIndex)
+	for _, dev := range devices {
+		if dev.MaxOutputChannels == 0 {
+			continue
+		}
+		if strings.Contains(strings.ToLower(dev.Name), lower) {
+			return dev, nil
+		}
+	}
+	return nil, fmt.Errorf("no output device matching %q", nameOrIndex)
 }

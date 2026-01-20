@@ -19,10 +19,11 @@ const (
 )
 
 var (
-	outputType string
-	strongFreq float64
-	weakFreq   float64
-	limit      uint
+	outputType   string
+	strongFreq   float64
+	weakFreq     float64
+	limit        uint
+	outputDevice string
 
 	outputTypes = []string{outputTypeStdOut, outputTypeAudio}
 )
@@ -57,7 +58,7 @@ var playCmd = &cobra.Command{
 
 		switch outputType {
 		case outputTypeAudio:
-			o := output.NewAudioOutput(strongFreq, weakFreq)
+			o := output.NewAudioOutputWithDevice(strongFreq, weakFreq, outputDevice)
 			if err := o.Start(); err != nil {
 				panic(err)
 			}
@@ -88,4 +89,5 @@ func init() {
 	playCmd.Flags().Float64Var(&strongFreq, "strongFreq", 1760, "Which frequency should be used to render the sin wave for the strong bar accent click (audio only)")
 	playCmd.Flags().Float64Var(&weakFreq, "weakFreq", 1320, "Which frequency should be used to render the sin wave for the weak mediate click (audio only)")
 	playCmd.Flags().UintVar(&limit, "limit", 0, "How many clicks to play. Used to limit to a single bar for example")
+	playCmd.Flags().StringVar(&outputDevice, "output-device", "", "Audio output device name substring or index (audio only)")
 }
